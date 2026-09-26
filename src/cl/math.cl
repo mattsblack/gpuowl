@@ -327,6 +327,21 @@ u128 OVERLOAD mul64(u64 a, u64 b) {
 #endif
 }
 
+// Full-width square using three 32x32 products instead of the four partial
+// products of a general multiply. Keep the doubled cross-product carry: it
+// can require 65 bits, even though each individual product fits in a u64.
+u128 square64(u64 a) {
+  u32 lo = (u32) a;
+  u32 hi = (u32) (a >> 32);
+  u64 lowSquare = (u64) lo * lo;
+  u64 cross = (u64) lo * hi;
+  u64 highSquare = (u64) hi * hi;
+  u64 middle = (lowSquare >> 32) + 2 * (u64) (u32) cross;
+  u64 resultLo = (middle << 32) | (u32) lowSquare;
+  u64 resultHi = highSquare + 2 * (cross >> 32) + (middle >> 32);
+  return make_u128(resultHi, resultLo);
+}
+
 u128 OVERLOAD mad64(u64 a, u64 b, u64 c) {
 #if ENABLE_MAD64 && HAS_PTX >= 200        // mad instruction requires sm_20 support or higher    // Slower on TitanV and mobile 4070, don't understand why
   u64 reslo, reshi;
@@ -1177,6 +1192,16 @@ Z61 OVERLOAD weakMul(Z61 a, Z61 b, const u32 a_m61_count, const u32 b_m61_count)
     return weakModM61(ab, 128);                         // Max value is 2*M61 + epsilon
   }
 }
+// Same range contract as weakMul(a, a, m61_count, m61_count).
+Z61 weakSquare(Z61 a, const u32 m61_count) {
+  u128 aa = square64(a);
+  if ((m61_count - 1) * (m61_count - 1) <= 6) {
+    return weakModM61(aa, 125);
+  } else {
+    return weakModM61(aa, 128);
+  }
+}
+
 Z61 OVERLOAD weakMulAdd(Z61 a, Z61 b, u64 c, const u32 a_m61_count, const u32 b_m61_count) {
   u128 ab = mad64(a, b, c);                             // Max value is (a_m61_count - 1) * (b_m61_count - 1) * M61^2 + epsilon
   if ((a_m61_count - 1) * (b_m61_count - 1) <= 6) {
@@ -1256,7 +1281,7 @@ GF61 OVERLOAD cmul(GF61 a, GF61 b) {
 
 // Square a root of unity complex number (the second version may be faster if the compiler optimizes the u128 squaring).
 //GF61 OVERLOAD csqTrig(GF61 a) { Z61 two_ay = a.y + a.y; return U2(modM61(1 + weakMul(two_ay, neg(a.y, 2))), mul(a.x, two_ay)); }
-GF61 OVERLOAD csqTrig(GF61 a) { Z61 ay_sq = weakMul(a.y, a.y, 2, 2); return U2(modM61(1 + neg(ay_sq + ay_sq, 4)), mul2(weakMul(a.x, a.y, 2, 2))); }
+GF61 OVERLOAD csqTrig(GF61 a) { Z61 ay_sq = weakSquare(a.y, 2); return U2(modM61(1 + neg(ay_sq + ay_sq, 4)), mul2(weakMul(a.x, a.y, 2, 2))); }
 
 // Cube w, a root of unity complex number, given w^2 and w
 GF61 OVERLOAD ccubeTrig(GF61 sq, GF61 w) { Z61 tmp = sq.y + sq.y; return U2(modM61(weakMul(tmp, neg(w.y, 2), 3, 3) + w.x), modM61(weakMul(tmp, w.x, 3, 2) + neg(w.y, 2))); }
