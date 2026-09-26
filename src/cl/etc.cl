@@ -17,13 +17,26 @@ KERNEL(32) readResidue(P(Word2) out, CP(Word2) in) {
 
 #if SUM64
 KERNEL(64) sum64(global ulong* out, u32 count, CP(Word) in) {
+  local ulong partial[64];
+  u32 me = get_local_id(0);
   ulong sum = 0;
   for (i32 p = get_global_id(0); p < count; p += get_global_size(0)) {
     sum += in[p];
   }
-  u32 prev = atomic_add((global u32*)out, (u32) sum);
-  u32 high = (sum + prev) >> 32;
-  atomic_add(((global u32*)out) + 1, high);
+  // Unsigned overflow is intentional: the checksum is modulo 2^64.
+  // Aggregate locally so only one lane per workgroup contends on out.
+  partial[me] = sum;
+  barrier(CLK_LOCAL_MEM_FENCE);
+  for (u32 stride = 32; stride; stride >>= 1) {
+    if (me < stride) { partial[me] += partial[me + stride]; }
+    barrier(CLK_LOCAL_MEM_FENCE);
+  }
+  if (me == 0) {
+    sum = partial[0];
+    u32 prev = atomic_add((global u32*)out, (u32) sum);
+    u32 high = (sum + prev) >> 32;
+    atomic_add(((global u32*)out) + 1, high);
+  }
 }
 #endif
 
