@@ -140,44 +140,74 @@ void updateStats(local u32 *lds, u32 num_threads, u32 num_blocks, global uint *b
   u32 me = get_local_id(0);
   u32 u32RoundMax = as_uint(roundMax);
 
-  // Reduce to a handful of roundMax values
-  // We could use shfl_down_sync (and AMD's equivalent) instead of LDS memory once num_threads < WAVEFRONT
-  // (see https://github.com/mahmoudmaftah/MaxReduction-Cuda/blob/main/code/reduction_benchmarks.cu)
-  while (num_threads > 8) {
-    // Write roundMax for high half of threads to local memory.  Ignore threads not participating in the reduction.
-    // bar(num_threads) rather than a hand-rolled "only if it is wider than a wavefront": that test assumes a
-    // wavefront advances in lock-step, which holds on AMD but not on nVidia Volta and later, and nowhere else
-    // at all.  bar() decides that by what the hardware guarantees, and with G_W == 64 and a 32-lane wavefront
-    // two of the three reduction steps here were running with no barrier and no fence.  num_threads is a
-    // compile-time workgroup size, so every thread makes the same number of passes and reaches both calls.
-    bar(num_threads);
-    if (me >= num_threads / 2 && me < num_threads) lds[me - num_threads / 2] = u32RoundMax;
-    bar(num_threads);
-    // Low half of threads do a max
-    if (me < num_threads / 2) {
-      u32 highHalfMax = lds[me];
-      if (u32RoundMax < highHalfMax) u32RoundMax = highHalfMax;
+  // Reduce within each hardware subgroup, then exchange only its maximum.
+  // Use actual subgroup IDs/sizes; WAVEFRONT is not an OpenCL capability test.
+#if CUDA_BACKEND
+  const u32 lane = me % 32;
+  const u32 remaining = num_threads - (me / 32) * 32;
+  const u32 lanes = remaining < 32 ? remaining : 32;
+  // Derive membership from the workgroup, not the momentary active mask.
+  const u32 mask = lanes == 32 ? 0xffffffffu : (1u << lanes) - 1;
+  for (u32 offset = 16; offset; offset >>= 1) {
+    u32 other = __shfl_down_sync(mask, u32RoundMax, offset);
+    if (lane + offset < lanes && u32RoundMax < other) {
+      u32RoundMax = other;
     }
-    // Cut num threads in half, loop
+  }
+  const u32 subgroup = me / 32;
+  const u32 subgroupLane = lane;
+  const u32 subgroups = (num_threads + 31) / 32;
+#elif defined(cl_khr_subgroups) || defined(__opencl_c_subgroups)
+  u32RoundMax = sub_group_reduce_max(u32RoundMax);
+  const u32 subgroup = get_sub_group_id();
+  const u32 subgroupLane = get_sub_group_local_id();
+  const u32 subgroups = get_num_sub_groups();
+#endif
+
+#if CUDA_BACKEND || defined(cl_khr_subgroups) || defined(__opencl_c_subgroups)
+  // The caller may have used this LDS for FFT data immediately beforehand.
+  bar();
+  if (subgroupLane == 0) {
+    lds[subgroup] = u32RoundMax;
+  }
+  bar();
+  if (me == 0) {
+    for (u32 i = 0; i < subgroups; ++i) {
+      if (u32RoundMax < lds[i]) { u32RoundMax = lds[i]; }
+    }
+  }
+  // Other lanes must not reuse LDS before lane zero has read all partials.
+  bar();
+#else
+  // Portable fallback, with a single publication just like the subgroup path.
+  while (num_threads > 1) {
+    bar(num_threads);
+    if (me >= num_threads / 2 && me < num_threads) {
+      lds[me - num_threads / 2] = u32RoundMax;
+    }
+    bar(num_threads);
+    if (me < num_threads / 2 && u32RoundMax < lds[me]) {
+      u32RoundMax = lds[me];
+    }
     num_threads /= 2;
   }
+#endif
 
   // The bufROE entry to update is stored in the first bufROE entry.  This value used to be passed into carryFused as an argument.
   // CUDA graphs don't allow arguments to change.  Thus, calculating posROE and storing it in bufROE works better.
-  if (me < num_threads) {
+  if (me == 0) {
     posROE = bufROE[0];
     // The buffer holds STATS_SIZE samples.  The host resets the position only when it reads the samples, and the LL and
     // CERT loops never read the carry statistics, so once the buffer is full stop recording rather than write past it.
     if (posROE < STATS_SIZE) {
       atomic_max(bufROE + posROE + 2, u32RoundMax);
 
-      // The second bufRoe entry is a count of the number atomic_maxes performed.  When the last atomic_max is done, increment posROE and clear the counter.
-      if (me == 0) {
-        u32 old_value = atomic_add(bufROE + 1, 1);
-        if (old_value == num_blocks - 1) {
-          bufROE[0] = posROE + 1;
-          bufROE[1] = 0;
-        }
+      // Publish before announcing this workgroup's completion.
+      write_mem_fence(CLK_GLOBAL_MEM_FENCE);
+      u32 old_value = atomic_add(bufROE + 1, 1);
+      if (old_value == num_blocks - 1) {
+        bufROE[0] = posROE + 1;
+        bufROE[1] = 0;
       }
     }
   }
