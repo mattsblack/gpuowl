@@ -2,6 +2,13 @@
 
 #include "base.cl"
 
+// XOR the column with the row to distribute transposed reads across LDS banks.
+// Both branches use 8-byte LDS elements. This permutation keeps the 64x64 tile
+// at 32 KiB, avoiding the allocation/occupancy increase of a padded stride.
+u32 transposeLdsIndex(u32 row, u32 column) {
+  return row * 64 + (column ^ row);
+}
+
 #if WordSize <= 4
 
 void transposeWords(u32 W, u32 H, local Word2 *lds, global const Word2 *restrict in, global Word2 *restrict out) {
@@ -17,12 +24,12 @@ void transposeWords(u32 W, u32 H, local Word2 *lds, global const Word2 *restrict
   u32 me = get_local_id(0);
   #pragma unroll 1
   for (i32 i = 0; i < 64; ++i) {
-    lds[i * 64 + me] = in[i * W + me];
+    lds[transposeLdsIndex(i, me)] = in[i * W + me];
   }
   bar();
   #pragma unroll 1
   for (i32 i = 0; i < 64; ++i) {
-    out[i * H + me] = lds[me * 64 + i];
+    out[i * H + me] = lds[transposeLdsIndex(me, i)];
   }
 }
 
@@ -53,22 +60,22 @@ void transposeWords(u32 W, u32 H, local Word *lds, global const Word2 *restrict 
   u32 me = get_local_id(0);
   #pragma unroll 1
   for (i32 i = 0; i < 64; ++i) {
-    lds[i * 64 + me] = in[i * W + me].x;
+    lds[transposeLdsIndex(i, me)] = in[i * W + me].x;
   }
   bar();
   #pragma unroll 1
   for (i32 i = 0; i < 64; ++i) {
-    out[i * H + me].x = lds[me * 64 + i];
+    out[i * H + me].x = lds[transposeLdsIndex(me, i)];
   }
   bar();
   #pragma unroll 1
   for (i32 i = 0; i < 64; ++i) {
-    lds[i * 64 + me] = in[i * W + me].y;
+    lds[transposeLdsIndex(i, me)] = in[i * W + me].y;
   }
   bar();
   #pragma unroll 1
   for (i32 i = 0; i < 64; ++i) {
-    out[i * H + me].y = lds[me * 64 + i];
+    out[i * H + me].y = lds[transposeLdsIndex(me, i)];
   }
 }
 
