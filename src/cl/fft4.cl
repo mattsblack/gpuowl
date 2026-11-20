@@ -126,35 +126,36 @@ void OVERLOAD fft4_skip1(F2 *u) {
 #if NTT_GF31
 
 void OVERLOAD fft4Core(GF31 *u) {
-  X2(u[0], u[2]);
-  X2_mul_t4(u[1], u[3]);
-  X2(u[0], u[1]);
-  X2(u[2], u[3]);
+  X2q(&u[0], &u[2]);           // u[0], u[2] in [0, 2*M31]
+  X2q_mul_t4(&u[1], &u[3]);    // u[1], u[3] in [0, 2*M31]
+  X2_lazy_modM31(&u[0], &u[1]);
+  X2_lazy_modM31(&u[2], &u[3]);
 }
 
-// 16 ADD
+
+// 16 ADD (8 lazy stage-1 ops, 8 reduced stage-2 ops)
 void OVERLOAD fft4by(GF31 *u, u32 base, u32 step, u32 M) {
-  Z31 x0 = add(A(0).x, A(2).x);
-  Z31 x2 = sub(A(0).x, A(2).x);
-  Z31 y0 = add(A(0).y, A(2).y);
-  Z31 y2 = sub(A(0).y, A(2).y);
+  u32 x0 = addq31(A(0).x, A(2).x);
+  u32 x2 = subq31(A(0).x, A(2).x);
+  u32 y0 = addq31(A(0).y, A(2).y);
+  u32 y2 = subq31(A(0).y, A(2).y);
 
-  Z31 x1 = add(A(1).x, A(3).x);
-  Z31 y3 = sub(A(1).x, A(3).x);
-  Z31 y1 = add(A(1).y, A(3).y);
-  Z31 x3 = sub(A(3).y, A(1).y);
+  u32 x1 = addq31(A(1).x, A(3).x);
+  u32 y3 = subq31(A(1).x, A(3).x);
+  u32 y1 = addq31(A(1).y, A(3).y);
+  u32 x3 = subq31(A(3).y, A(1).y);
 
-  Z31 a0 = add(x0, x1);
-  Z31 a1 = sub(x0, x1);
+  Z31 a0 = add_lazy_modM31(x0, x1);
+  Z31 a1 = sub_lazy_modM31(x0, x1);
 
-  Z31 b0 = add(y0, y1);
-  Z31 b1 = sub(y0, y1);
+  Z31 b0 = add_lazy_modM31(y0, y1);
+  Z31 b1 = sub_lazy_modM31(y0, y1);
 
-  Z31 a2 = add(x2, x3);
-  Z31 a3 = sub(x2, x3);
+  Z31 a2 = add_lazy_modM31(x2, x3);
+  Z31 a3 = sub_lazy_modM31(x2, x3);
 
-  Z31 b2 = add(y2, y3);
-  Z31 b3 = sub(y2, y3);
+  Z31 b2 = add_lazy_modM31(y2, y3);
+  Z31 b3 = sub_lazy_modM31(y2, y3);
 
   A(0) = U2(a0, b0);
   A(1) = U2(a2, b2);

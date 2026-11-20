@@ -306,23 +306,24 @@ void OVERLOAD fft8_16b(GF31 *u) {
   GF31 m1 = cmul_const(u[1], U2(negC1, negS1));
   u[2] = mul_t8(u[2]);
   GF31 m3 = cmul_const(u[3], U2(negC1, S1));
-  X2(u[0], u[2]);
-  Z31 p = sub(m3.y, m1.x), q = add(m1.y, m3.x), r = sub(m1.y, m3.x), s = add(m1.x, m3.y);
-  u[1] = U2(sub(u[0].x, p), add(u[0].y, q));
-  u[0] = U2(add(u[0].x, p), sub(u[0].y, q));
-  u[3] = U2(sub(u[2].x, r), add(u[2].y, s));
-  u[2] = U2(add(u[2].x, r), sub(u[2].y, s));
+  X2q(&u[0], &u[2]);
+  u32 p = subq31(m3.y, m1.x), q = addq31(m1.y, m3.x), r = subq31(m1.y, m3.x), s = addq31(m1.x, m3.y);
+  u[1] = U2(sub_lazy_modM31(u[0].x, p), add_lazy_modM31(u[0].y, q));
+  u[0] = U2(add_lazy_modM31(u[0].x, p), sub_lazy_modM31(u[0].y, q));
+  u[3] = U2(sub_lazy_modM31(u[2].x, r), add_lazy_modM31(u[2].y, s));
+  u[2] = U2(add_lazy_modM31(u[2].x, r), sub_lazy_modM31(u[2].y, s));
+
 
   // Second half: u5*w^3 = (m5.y, -m5.x) and u7*w^9 = m7 make fft4's first stage u5 + u7 = (m5.y + m7.x, m7.y - m5.x) and
   // i*(u5 - u7) = (m5.x + m7.y, m5.y - m7.x).
   GF31 m5 = cmul_const(u[5], U2(negC1, S1));
   u[6] = mul_3t8(u[6]);
   GF31 m7 = cmul_const(u[7], U2(negC1, negS1));
-  X2(u[4], u[6]);
-  u[5] = U2(add(m5.y, m7.x), sub(m7.y, m5.x));
-  u[7] = U2(add(m5.x, m7.y), sub(m5.y, m7.x));
-  X2(u[4], u[5]);
-  X2(u[6], u[7]);
+  X2q(&u[4], &u[6]);
+  u[5] = U2(addq31(m5.y, m7.x), subq31(m7.y, m5.x));
+  u[7] = U2(addq31(m5.x, m7.y), subq31(m5.y, m7.x));
+  X2_lazy_modM31(&u[4], &u[5]);
+  X2_lazy_modM31(&u[6], &u[7]);
 
   SWAP(u[1], u[4]);
   SWAP(u[3], u[6]);

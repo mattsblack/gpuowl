@@ -1076,6 +1076,49 @@ GF31q OVERLOAD subq(GF31q a, GF31q b) { return makeGF31q(subq(a.x, b.x), subq(a.
 Z31 OVERLOAD modM31(Z31q a) { return modM31(a.v); }
 GF31 OVERLOAD modM31(GF31q a) { return U2(modM31(a.x), modM31(a.y)); }
 
+// Lazy add/sub for inputs a, b in [0, M31]: outputs lie in [0, 2*M31] (<= 0xFFFFFFFE).
+u32 OVERLOAD addq31(Z31 a, Z31 b) { return a + b; }
+u32 OVERLOAD subq31(Z31 a, Z31 b) { return a + (M31 - b); }
+
+// Stage-2 add/sub for lazy inputs a, b in [0, 2*M31], reducing into [0, M31].
+// Since 2^32 = 2*M31 + 2 == 2 (mod M31):
+//   - On add carry (s < a): s is in [0, 0xFFFFFFFC], so s + 2u is in [2, 0xFFFFFFFE].
+//   - If s == 0xFFFFFFFFu (2*M31 + 1 == 1 mod M31): s + 2u wraps to 1u.
+//   - On sub borrow (a < b): d is in [2, 0xFFFFFFFF], so d - 2u is in [0, 0xFFFFFFFD].
+// In all cases, the argument passed to modM31(Z31) is <= 0xFFFFFFFE (never 0xFFFFFFFF).
+Z31 OVERLOAD add_lazy_modM31(u32 a, u32 b) {
+  u32 s = a + b;
+  if (s < a || s == 0xFFFFFFFFu) s += 2u;
+  return modM31(s);
+}
+
+Z31 OVERLOAD sub_lazy_modM31(u32 a, u32 b) {
+  u32 d = a - b;
+  if (a < b) d -= 2u;
+  return modM31(d);
+}
+
+// Lazy complex butterfly helpers for GF31 (inputs in [0, M31], outputs in [0, 2*M31]).
+void OVERLOAD X2q(GF31 *a, GF31 *b) {
+  GF31 t = *a;
+  *a = U2(addq31(t.x, b->x), addq31(t.y, b->y));
+  *b = U2(subq31(t.x, b->x), subq31(t.y, b->y));
+}
+
+// Lazy X2 followed by mul_t4(b) = (-b.y, b.x) in [0, 2*M31].
+void OVERLOAD X2q_mul_t4(GF31 *a, GF31 *b) {
+  GF31 t = *a;
+  *a = U2(addq31(t.x, b->x), addq31(t.y, b->y));
+  *b = U2(subq31(b->y, t.y), subq31(t.x, b->x));
+}
+
+// Stage-2 complex butterfly consuming lazy inputs in [0, 2*M31] and outputting in [0, M31].
+void OVERLOAD X2_lazy_modM31(GF31 *a, GF31 *b) {
+  GF31 t = *a;
+  *a = U2(add_lazy_modM31(t.x, b->x), add_lazy_modM31(t.y, b->y));
+  *b = U2(sub_lazy_modM31(t.x, b->x), sub_lazy_modM31(t.y, b->y));
+}
+
 #endif
 
 
