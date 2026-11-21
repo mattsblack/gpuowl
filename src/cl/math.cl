@@ -954,6 +954,15 @@ GF31 OVERLOAD cmul(GF31 a, GF31 b) {
   u64 i = mad32(a.x, b.y, aybx);                // Max value is 2*M31^2 = 7FFF FFFE 0000 0002
   return U2(modM31(r, 63), modM31(i, 63));
 }
+// Complex mul times 2: returns 2 * cmul(a, b) in [0, M31] with a single modM31 per component.
+// r, i <= 2*M31^2 = 0x7FFFFFFE00000002, so r + r and i + i <= 0xFFFFFFFC00000004 < 0xFFFFFFFF7FFFFFFF (modM31(u64)'s limit).
+GF31 OVERLOAD cmul2(GF31 a, GF31 b) {
+  u64 ayby = (u64) a.y * (u64) neg(b.y);
+  u64 aybx = (u64) a.y * (u64) b.x;
+  u64 r = mad32(a.x, b.x, ayby);
+  u64 i = mad32(a.x, b.y, aybx);
+  return U2(modM31(r + r), modM31(i + i));
+}
 #endif
 
 // Unless TABMUL_CHAIN31 (small trig for fft_WIDTH / fft_HEIGHT) or MIDDLE_CHAIN31 (middle trig that middleMul and middleMul2 read) is set,

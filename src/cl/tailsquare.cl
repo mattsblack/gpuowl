@@ -700,7 +700,7 @@ void OVERLOAD onePairSq(GF31* pa, GF31* pb, GF31 t_squared, const u32 t_squared_
     c = csq_add(a, b2t2);             // a^2 - -1*(b^2 * t_squared)
   if (t_squared_type == 3)            // mul t_squared by -i
     c = csq_addi(a, b2t2);            // a^2 - -i*(b^2 * t_squared)
-  d = mul2(cmul(a, b));
+  d = cmul2(a, b);
   X2_conjb(c, d);
   *pa = SWAP_XY(c), *pb = SWAP_XY(d);
 }
