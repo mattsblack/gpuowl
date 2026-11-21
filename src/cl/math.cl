@@ -838,7 +838,18 @@ u32 get_Z31(Z31 a) { return a == M31 ? 0 : a; }                         // Get v
 i32 get_balanced_Z31(Z31 a) { return (a & 0xC0000000) ? (i32) a - M31 : (i32) a; }  // Get balanced value in range -M31/2 to M31/2
 
 // Assumes k reduced mod 31.
-Z31 OVERLOAD shr(Z31 a, u32 k) { return (a >> k) + ((a << (31 - k)) & M31); }
+// Assumes k in 1..30 (all callers pass compile-time constants: 15, 16, 2, 29).
+// Uses PTX funnel shift on sm_32+: (a << 1) holds a's bits at [31:1], so shf.r.clamp.b32(a, a << 1, k)
+// places the 31-bit right rotation of a directly in bits [30:0] in two instructions (SHF + AND) instead of four.
+Z31 OVERLOAD shr(Z31 a, u32 k) {
+#if HAS_PTX >= 320
+  u32 r;
+  __asm("shf.r.clamp.b32 %0, %1, %2, %3;" : "=r"(r) : "r"(a), "r"(a << 1), "r"(k));
+  return r & M31;
+#else
+  return (a >> k) + ((a << (31 - k)) & M31);
+#endif
+}
 GF31 OVERLOAD shr(GF31 a, u32 k) { return U2(shr(a.x, k), shr(a.y, k)); }
 Z31 OVERLOAD shl(Z31 a, u32 k) { return shr(a, 31 - k); }
 GF31 OVERLOAD shl(GF31 a, u32 k) { return U2(shl(a.x, k), shl(a.y, k)); }

@@ -712,30 +712,31 @@ void OVERLOAD pairSq(u32 N, GF31 *u, GF31 *v, GF31 base_squared, bool special) {
   // (NVRTC 12.8 left the GF61 version rolled: 128 bytes of local memory in tailSquareGF61).
   #pragma unroll
   for (i32 i = 0; i < NH / 4; ++i, base_squared = mul_t8(base_squared)) {
+    GF31 base2 = U2(base_squared.x + base_squared.x, base_squared.y + base_squared.y);
     if (special && i == 0 && me == 0) {
 #if PFA
       // The two self-paired elements of a PFA tail line have t^2 = w^k3 and -w^k3 (w a PFA-th root of unity), not 1 and -1.  Use the general
       // formula with each element as its own partner.
       GF31 self = u[i];
-      onePairSq(&u[i], &self, base_squared, 0);
+      onePairSq(&u[i], &self, base2, 0);
       self = v[i];
-      onePairSq(&v[i], &self, base_squared, 2);
+      onePairSq(&v[i], &self, base2, 2);
 #else
       u[i] = SWAP_XY(mul2(foo(u[i])));
       v[i] = SWAP_XY(shl(csq(v[i]), 2));
 #endif
     } else {
-      onePairSq(&u[i], &v[i], base_squared, 0);
+      onePairSq(&u[i], &v[i], base2, 0);
     }
 
     if (N == NH) {
-      onePairSq(&u[i+NH/2], &v[i+NH/2], base_squared, 2);
+      onePairSq(&u[i+NH/2], &v[i+NH/2], base2, 2);
     }
 
-    onePairSq(&u[i+NH/4], &v[i+NH/4], base_squared, 1);
+    onePairSq(&u[i+NH/4], &v[i+NH/4], base2, 1);
 
     if (N == NH) {
-      onePairSq(&u[i+3*NH/4], &v[i+3*NH/4], base_squared, 3);
+      onePairSq(&u[i+3*NH/4], &v[i+3*NH/4], base2, 3);
     }
   }
 }
