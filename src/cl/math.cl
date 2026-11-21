@@ -844,7 +844,7 @@ i32 get_balanced_Z31(Z31 a) { return (a & 0xC0000000) ? (i32) a - M31 : (i32) a;
 Z31 OVERLOAD shr(Z31 a, u32 k) {
 #if HAS_PTX >= 320
   u32 r;
-  __asm("shf.r.clamp.b32 %0, %1, %2, %3;" : "=r"(r) : "r"(a), "r"(a << 1), "r"(k));
+  __asm("shf.r.clamp.b32 %0, %1, %2, %3;" : "=r"(r) : "r"(a << 1), "r"(a), "r"(k + 1));
   return r & M31;
 #else
   return (a >> k) + ((a << (31 - k)) & M31);
